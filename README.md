@@ -65,3 +65,4 @@ Here's the syntax for draw functions:
 ```python
 > draw(g, 0, 10, 0.001)
 ```
+![image](./assets/image.png)
