@@ -1,7 +1,8 @@
 from tokens import Token, TokenKind
-from node import Node, BinOperation, Operation, NodeKind, FunctionDeclaration, FunctionEvaluation
+from node import Node, BinOperation, Operation, NodeKind, DrawFunction, FunctionDeclaration, FunctionEvaluation
 from tree import AST
 from basic_parser import BasicParser
+from symbols import builtin_functions
 from errors.parser import ParserException, ParserExceptionOptions
 
 ASTorException  = tuple[AST | None, ParserException | None]
@@ -75,6 +76,11 @@ class Parser:
             return None, ParserException(ParserExceptionOptions(f"Expected a function name but token of kind `{str(self.__peek().kind)}` found", self.__peek()))
 
         name = self.__peek().value
+        for func in builtin_functions:
+            _name, _, _ = func
+            if _name == name:
+                return None, ParserException(ParserExceptionOptions(f"{name} function is already built-in")) 
+
         self.__consume()
 
         variables, err = self.__parse_function_variables()
@@ -124,13 +130,21 @@ class Parser:
 
         return values, None
         
-
-
     def __parse_function_evaluation(self) -> NodeOrException:
-        if self.__peek().kind != TokenKind.IDENTIFIER:
+        tok = self.__peek()
+        if tok.kind != TokenKind.IDENTIFIER:
             return None, ParserException(ParserExceptionOptions(f"Expected an identifier but token of kind `{str(self.__peek().kind)}` found", self.__peek()))
 
         name = self.__peek().value
+
+        f = None
+        for i in range(len(builtin_functions)):
+            func = builtin_functions[i]
+            _name, _,  _ = func
+            if name == _name:
+                f = func
+                break
+
         pos = self.__peek().pos
         self.__consume()
 
@@ -138,7 +152,12 @@ class Parser:
         if err:
             return None, err
 
-        return Node(FunctionEvaluation(name, values), NodeKind.FUNCTION_EVALUATION, pos), None
+        if f != None:
+            _, _, params_count = f
+            if len(values) != params_count:
+                return None, ParserException(ParserExceptionOptions(f"Expected {params_count} argument for function {name} but {len(values)} were given", tok))
+
+        return Node(FunctionEvaluation(name, values, f != None), NodeKind.FUNCTION_EVALUATION, pos), None
 
     def __parse_primary(self) -> NodeOrException:
         token = self.__peek()
@@ -224,11 +243,74 @@ class Parser:
         
         return left, None
 
-    def __parse_expression(self):
-        if self.__peek().kind != TokenKind.DEF:
-            return self.__parse_addition()
+    def __parse_draw_command(self):
+        tok = self.__peek()
+        pos = tok.pos
 
-        return self.__parse_function_declaration()
+        if tok.kind != TokenKind.DRAW:
+            return None,  ParserException(ParserExceptionOptions(f"Expected draw but {str(tok.kind)} found", tok))
+
+        self.__consume()
+
+        tok = self.__peek()
+        if tok.kind != TokenKind.PAREN_OPEN:
+            return None, ParserException(ParserExceptionOptions(f"Expected '(' token but {str(tok.kind)} found", tok))
+
+        self.__consume()
+
+        tok = self.__peek()
+        if tok.kind != TokenKind.IDENTIFIER:
+            return None, ParserException(ParserExceptionOptions(f"Expected function name but {str(tok.kind)} found", tok))
+
+        func = tok.value
+        self.__consume()
+
+        tok = self.__peek()
+        if tok.kind != TokenKind.COMMA:
+            return None, ParserException(ParserExceptionOptions(f"Expected ',' but {str(tok.kind)} found", tok))
+
+        self.__consume()
+
+        lower_bound, err = self.__parse_addition()
+        if err:
+            return None, err
+        
+        tok = self.__peek()
+        if tok.kind != TokenKind.COMMA:
+            return None, ParserException(ParserExceptionOptions(f"Expected ',' but {str(tok.kind)} found", tok))
+
+        self.__consume()
+
+        upper_bound, err = self.__parse_addition()
+        if err:
+            return None, err
+        
+        tok = self.__peek()
+        if tok.kind != TokenKind.COMMA:
+            return None, ParserException(ParserExceptionOptions(f"Expected ',' but {str(tok.kind)} found", tok))
+
+        self.__consume()
+
+        step, err = self.__parse_addition()
+        if err:
+            return None, err
+        
+        tok = self.__peek()
+        if tok.kind != TokenKind.PAREN_CLOSE:
+            return None, ParserException(ParserExceptionOptions(f"Expected ')' token but {str(tok.kind)} found", tok))
+
+        self.__consume()
+
+        return Node(DrawFunction(func, lower_bound, upper_bound, step), NodeKind.DRAW_FUNCTION, pos), None
+
+    def __parse_expression(self):
+        if self.__peek().kind == TokenKind.DEF:
+            return self.__parse_function_declaration()
+
+        if self.__peek().kind == TokenKind.DRAW:
+            return self.__parse_draw_command()
+        
+        return self.__parse_addition()
 
     def parse(self) -> ASTorException:
         root, err = self.__parse_expression()

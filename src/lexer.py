@@ -1,5 +1,5 @@
 from tokens import Token, TokenKind
-from symbols import symbols
+from symbols import symbols, cmds
 from errors.lexer import LexerException, LexerExceptionOptions
 from checker import Checker, NumberType
 
@@ -44,7 +44,14 @@ class Lexer:
                 v += c
                 self.__consume()
             
-            return Token(TokenKind.IDENTIFIER if v != "def" else TokenKind.DEF, v, current)
+            kind = TokenKind.IDENTIFIER
+
+            for name, _kind in cmds:
+                if name == v:
+                    kind = _kind
+                    break
+
+            return Token(kind, v, current)
 
         number = ""
         current = self.current

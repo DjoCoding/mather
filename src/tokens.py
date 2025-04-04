@@ -13,6 +13,7 @@ class TokenKind(Enum):
     DEF             = auto()
     EQUAL           = auto()
     COMMA           = auto()
+    DRAW            = auto()
     END             = auto()
 
     def __str__(self):
@@ -42,6 +43,8 @@ class TokenKind(Enum):
             return "END"
         if self == TokenKind.COMMA:
             return "COMMA"
+        if self == TokenKind.DRAW:
+            return "DRAW"
         return "None"
 
 class Token:

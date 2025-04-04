@@ -1,15 +1,15 @@
-from node import Node
+from tokens import Token
 from dataclasses import dataclass
 
 @dataclass
 class ParserExceptionOptions:
     message: str
-    node: Node
+    token: Token
 
 class ParserException(Exception):
     def __init__(self, options: ParserExceptionOptions):
         super().__init__(options.message)
-        self.node = options.node
+        self.token = options.token
     
     def format(self):
-        return f"{'end' if self.node.pos == -1 else self.node.pos}: {str(self)}"
+        return f"{'end' if self.token.pos == -1 else self.token.pos}: {str(self)}"

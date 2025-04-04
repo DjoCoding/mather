@@ -19,9 +19,17 @@ class FunctionDeclaration:
         self.body = body
     
 class FunctionEvaluation:
-    def __init__(self, name: str, values: list["Node"]):
+    def __init__(self, name: str, values: list["Node"], isbuiltin: bool = False):
         self.name = name
         self.values = values
+        self.isbuiltin = isbuiltin
+
+class DrawFunction:
+    def __init__(self, func: str, _from: "Node", _to: "Node", step: "Node"):
+        self.func = func
+        self._from = _from
+        self._to = _to
+        self.step = step
 
 class NodeKind(Enum):
     BINARY_OPERATION        = auto()
@@ -30,8 +38,9 @@ class NodeKind(Enum):
     FUNCTION_DECLARATION    = auto()
     FUNCTION_EVALUATION     = auto()
     IDENTIFIER              = auto()
+    DRAW_FUNCTION           = auto()
 
-NodeValue = int | float | BinOperation | FunctionEvaluation | FunctionDeclaration
+NodeValue = int | float | BinOperation | FunctionEvaluation | FunctionDeclaration | DrawFunction
 
 class Node:
     def __init__(self, value: NodeValue, kind: NodeKind, pos: int):

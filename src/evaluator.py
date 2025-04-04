@@ -1,11 +1,13 @@
 from stack import Stack
 from tree import AST
-from node import Node, NodeKind, BinOperation, Operation, FunctionDeclaration, FunctionEvaluation
+from node import Node, NodeKind, BinOperation, Operation, DrawFunction, FunctionDeclaration, FunctionEvaluation
 from errors.evaluator import EvaluatorException, EvaluatorExceptionOptions
 from context import Context, Function
+from drawer import Drawer, DrawerInput
+from symbols import builtin_functions
 from typing import cast
 
-Result = int | float
+Result = int | float | DrawerInput
 ResultOrError = tuple[Result | None, EvaluatorException | None]
 
 class Evaluator:
@@ -14,7 +16,7 @@ class Evaluator:
         self.context = context   # for global function definitions 
         self.stack = Stack()     # for function execution
     
-    def __evaluate_on_values(self, op: Operation, left: Result, right: Result) -> ResultOrError:
+    def __evaluate_on_values(self, node: Node, op: Operation, left: Result, right: Result) -> ResultOrError:
         if op == Operation.ADD:
             return left + right, None
 
@@ -65,7 +67,7 @@ class Evaluator:
             if err:
                 return None, err
 
-            return self.__evaluate_on_values(binop.operation, left, right)
+            return self.__evaluate_on_values(node, binop.operation, left, right)
     
         raise NotImplementedError()
         
@@ -80,7 +82,7 @@ class Evaluator:
         if err:
             return None, err
 
-        return self.__evaluate_on_values(binop.operation, left, right)
+        return self.__evaluate_on_values(node, binop.operation, left, right)
     
     def __evaluate_float(self, node: Node) -> ResultOrError:
         f = cast(float, node.value)
@@ -89,6 +91,35 @@ class Evaluator:
     def __evaluate_int(self, node: Node) -> ResultOrError:
         i = cast(int, node.value)
         return i, None
+
+    def __evaluate_builtin_function(self, node: Node) -> ResultOrError:
+        func = cast(FunctionEvaluation, node.value)
+        
+        f = None
+        for i in range(len(builtin_functions)):
+            name, _, _ =  builtin_functions[i]
+            if name == func.name:
+                f = builtin_functions[i]
+                break
+        
+        if f == None:
+            return None, EvaluatorException(EvaluatorExceptionOptions(node, f"Function {func.name} is not builtin"))
+    
+        xs = [] 
+        for value in func.values:
+            v, err = self.__evaluate_node_with_map(value)
+            if err:
+                return None, err
+            
+            xs.append(v)
+        
+        _, y, params_count = f
+
+        try:   
+            if params_count == 1:
+                return y(xs[0]), None
+        except Exception:
+            return None, EvaluatorException(EvaluatorExceptionOptions(node, f"Failed to evaluate function {name} at {xs}"))
 
     def __evaluate_function_at(self, func: Function, values: list[Node]) -> ResultOrError:
         vs = dict()
@@ -114,6 +145,9 @@ class Evaluator:
 
     def __evaluate_function_eval(self, node: Node) -> ResultOrError:
         func_eval = cast(FunctionEvaluation, node.value)
+
+        if func_eval.isbuiltin:
+            return self.__evaluate_builtin_function(node)
 
         func = self.context.findfunc(func_eval.name)
         if not func:    
@@ -150,6 +184,9 @@ class Evaluator:
 
         if v.kind == NodeKind.FUNCTION_EVALUATION:
             func = cast(FunctionEvaluation, v.value)
+            if func.isbuiltin:
+                return None
+            
             found = self.context.findfunc(func.name)
             
             if not found:
@@ -193,6 +230,66 @@ class Evaluator:
 
         return f"{func.name}({s})", None
 
+    def __evaluate_draw_command(self, node: Node) -> ResultOrError:
+        cmd = cast(DrawFunction, node.value)
+
+        func = self.context.findfunc(cmd.func)
+        if func == None:
+            return None, EvaluatorException(EvaluatorExceptionOptions(node, f"Function {cmd.func} not defined"))
+        
+        if len(func.params) != 1:
+            return None, EvaluatorException(EvaluatorExceptionOptions(node, f"Drawing multi-dimensional functions is not supported"))
+
+        lower, err = self.__evaluate_node(cmd._from)
+        if err:
+            return None, err
+
+        upper, err = self.__evaluate_node(cmd._to)
+        if err:
+            return None, err
+
+        step, err = self.__evaluate_node(cmd.step)
+        if err:
+            return None, err
+        
+        lower = cast(float, lower)
+        upper = cast(float, upper)
+        step  = cast(float, step)
+
+        if lower > upper:
+            return None, EvaluatorException(EvaluatorExceptionOptions(node, f"the lower bound should be greater than the upper bound: {lower} > {upper}"))
+        
+        if step == 0:
+            step = 0.1
+
+        param = func.params[0]
+        id = cast(str, param.value) 
+
+        xs = []
+        ys = []
+
+        vs = dict()
+        
+        x = lower
+        while x <= upper:
+            xs.append(x)
+
+            vs[id] = x
+            self.stack.push(func.name, vs)
+            
+            value, err = self.__evaluate_node_with_map(func.body)
+            ys.append(value if err == None else None)
+            
+            self.stack.pop()
+            x += step
+
+        try:
+            Drawer.draw(DrawerInput(func.name, id, xs, ys))
+        except Exception:
+            pass
+
+        return "done", None
+
     def __evaluate_node(self, node: Node):
         if node.kind == NodeKind.BINARY_OPERATION:
             return self.__evaluate_binop(node)
@@ -208,6 +305,9 @@ class Evaluator:
     
         if node.kind == NodeKind.FUNCTION_EVALUATION:
             return self.__evaluate_function_eval(node)
+
+        if node.kind == NodeKind.DRAW_FUNCTION:
+            return self.__evaluate_draw_command(node)
         
         raise NotImplementedError()
 
